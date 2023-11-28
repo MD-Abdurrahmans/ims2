@@ -1,10 +1,10 @@
 const express = require("express");
 require("dotenv").config();
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")('sk_test_51OEBh5JPntNfPAY0wWotHmL0dkCHb00srFM3H9xo220LJeuk7e61X4mi20dZKHsSucZbve2A7CCytxsNIL34xHbn00SowaxNlP')
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // create app 
 const app = express();
@@ -13,7 +13,7 @@ const port = process.env.PORT || 4000;
 // middle ware
 app.use(
   cors({
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173"] ,
     credentials: true,
   })
 );
@@ -33,6 +33,16 @@ const client = new MongoClient(uri, {
   }
 });
 
+
+
+
+
+
+
+
+
+
+
 async function run() {
   try {
     // TODO:DELETE BEFORE DEPLOY AWAIT CLIENT
@@ -47,9 +57,129 @@ async function run() {
 
 
 
+    // start work on verify  token 
+
+const verifyToken = async(req,res,next)=>{
+
+
+  const token = req.cookies?.token;
+
+  if(!token){
+
+   return  res.status(401).send({message:'unauthorize access'})
+
+  }
+
+  jwt.verify(token,process.env.SECRET_KEY,(err,decode)=>{
+
+
+   if(err){
+     return res.status(403).send({message:'forbidden'})
+   }
+
+   req.user = decode;
+
+   next();
+
+  })
+
+}
 
 
 
+const verifyAdmin = async(req,res,next)=>{
+
+  const email = req.user?.email;
+
+
+ 
+  
+  console.log('emmi',req.user?.email)
+  const query = {email:email};
+
+
+   const user = await usersCollections.findOne(query);
+
+
+   const isAdmin = user?.role === 'admin';
+
+   if(!isAdmin){
+
+     return res.status(403).send({message:'forbidden access' })
+   }
+
+   next();
+
+}
+
+
+
+const verifyManager = async (req,res,next)=>{
+
+ const email = req.user.email;
+const query = {email:email};
+
+ const user = await usersCollections.findOne(query);
+
+
+  const isManager = user?.role === 'manager';
+
+  if(!isManager){
+
+   return res.status(403).send({message:'forbidden access'})
+  }
+
+}
+
+
+
+
+
+
+
+
+
+// jwt api 
+
+
+
+app.post('/api/v1/jwt',async(req,res)=>{
+
+
+   const email = req.body;
+
+  //  console.log('hi' ,email)
+
+ const token =   jwt.sign(email,process.env.SECRET_KEY,{expiresIn:'365d'})
+
+ res.cookie('token', token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+})
+
+ res.send({status:'success'})
+   
+})
+
+
+// logout
+
+app.post('/api/v1/logOut',async(req,res)=>{
+
+    // console.log('log',req.body)
+
+ 
+
+    res.clearCookie('token',{
+       maxAge:0,
+       secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+    }).send({success:true})
+    
+ 
+
+})
 
 
 
@@ -93,10 +223,10 @@ app.post('/api/v1/users/:email',async(req,res)=>{
 
 // shop collection create shop post
 // TODO:CHECK ONE ERROR THERE 
-app.post('/api/v1/createShop/:email',async(req,res)=>{
+app.post('/api/v1/createShop/:email', verifyToken, verifyToken, async(req,res)=>{
     const email = req.params.email;
     const query = {email:email}
-
+  console.log(req.user)
     const  existShop = await usersCollections.findOne(query);
 // console.log('exist', existShop.length)
 
@@ -121,6 +251,7 @@ app.post('/api/v1/createShop/:email',async(req,res)=>{
                 role: 'manager',
                 addLimit:3,
                 saleLimit:1,
+                shopName:shopInfo.shopName,
               },
             };
   
@@ -155,7 +286,7 @@ app.get('/api/v1/role/:email',async(req,res)=>{
 
  const email = req.params.email;
  
-  console.log(email)
+  // console.log(email)
  
 const query = {OwnerEmail:email}
 
@@ -187,7 +318,7 @@ const query = {OwnerEmail:email}
 // add products insert action
 
 
-app.post('/api/v1/addProducts/:shopId',async(req,res)=>{
+app.post('/api/v1/addProducts/:shopId',verifyToken, verifyManager, async(req,res)=>{
 
     const id =   req.params.shopId;
 
@@ -198,7 +329,7 @@ app.post('/api/v1/addProducts/:shopId',async(req,res)=>{
 
     // console.log('shopE', shopEmail)
 
-     if(shopEmail?.addLimit===3 || shopEmail?.addLimit>=3){
+     if(shopEmail?.addLimit===3 ){
 
       res.send({message:"your product are limited",status:'limited'})
      }else{
@@ -254,6 +385,35 @@ console.log(query)
 
 
 
+app.get('/api/v1/products',async(req,res)=>{
+
+
+const {search} = req.query;
+
+
+ if(!search){
+
+  res.send({mesage:'not text '})
+ }else{
+
+const query = {
+  _id:new ObjectId(search)
+
+
+}
+const result = await productsCollections.find(query).toArray();
+
+ res.send(result)
+ console.log(result)
+
+ }
+
+
+
+
+})
+
+
 
 
 
@@ -262,7 +422,7 @@ console.log(query)
 // update product 
 
 
-app.patch('/api/v1/updateProduct/:id',async(req,res)=>{
+app.patch('/api/v1/updateProduct/:id', verifyToken, verifyManager, async(req,res)=>{
 
   const id = req.params.id;
   const filter = {_id: new ObjectId(id)}
@@ -296,7 +456,7 @@ console.log('upd', updateInfo)
 // Delete products 
 
 
-app.delete('/api/v1/productDelete/:id',async(req,res)=>{
+app.delete('/api/v1/productDelete/:id', verifyToken, verifyManager, async(req,res)=>{
 
 const id = req.params.id;
 
@@ -318,7 +478,9 @@ console.log(filter)
 // sale collection paid product
 
 
-app.post('/api/v1/saleProduct',async(req,res)=>{
+app.post('/api/v1/saleProduct', verifyToken, verifyManager, async(req,res)=>{
+
+
 
 
 const sale = req.body;
@@ -333,14 +495,14 @@ const quey = {_id: new ObjectId(sale.itemId)}
 
   $set:{
     saleCount: productsC.saleCount+1,
-    productQuantity: parseInt(productsC.productQuantity)-1,
+    productQuantity: parseInt(productsC.productQuantity)- sale?.orderQuantity,
   }
  }
 
  const updateSale = await productsCollections.updateOne(quey,updateDoc);
-
+console.log('updateS', updateSale)
   res.send({result:result,updateSale:updateSale})
-console.log(updateSale)
+
 })
 
 
@@ -350,8 +512,6 @@ console.log(updateSale)
 
 
 // create payment  intent 
-
-
 
 
 app.post('/api/v1/create-payment-intent',async(req,res)=>{
@@ -386,19 +546,18 @@ console.log(price)
 
 // update collection 
 
-
-
-app.patch('/api/v1/limitProduct/:email',async(req,res)=>{
+app.patch('/api/v1/limitProduct/:email', verifyToken, verifyManager, async(req,res)=>{
  
   const email = req.params.email;
   const query = {OwnerEmail:email}
 const paymentInfo = req.body;
   console.log(email)
-  console.log('bb', paymentInfo.balance)
+  // console.log('bb', paymentInfo.balance)
+  // console.log('LL', paymentInfo.limit)
 
 
   const increase =  await shopsCollections.findOne(query)
- console.log(increase)
+//  console.log(increase)
 
   const filter = {_id: new ObjectId(increase?._id)}
 
@@ -407,7 +566,7 @@ const paymentInfo = req.body;
  
   
     $set: {
-      addLimit: paymentInfo.limit,
+      addLimit:increase?.addLimit + paymentInfo.limit,
        
     }
    }
@@ -450,31 +609,41 @@ const paymentInfo = req.body;
 // shop ownerId get and findOut sale summary
 
 
-app.get('/api/v1/sales/:shopId',async(req,res)=>{
+app.get('/api/v1/sales/:shopId', verifyToken, verifyManager, async(req,res)=>{
 
-
+  // console.log('rrraj',req.query)
+  const page =parseInt( req.query.page);
+  const size = parseInt(req.query.size);
+ const skips = page*size;
+//  console.log(skips)
   const shopId = req.params.shopId;
 
   const query = {shopId:shopId};
-console.log('sEmail',query)
-  const sales = await salesCollections.find(query).toArray();
+// console.log('sEmail',query)
 
+  const sales = await salesCollections.find(query).limit(size).skip(skips).toArray();
 
-  const pipeline = [
+// console.log(sales)
+  const matchedStage = {$match:{shopId:shopId}}
+  
+  
+  const groupStage ={
 
-    {
-      $group:{
-        _id:null,
-        sellingPrice:{$sum:'$sellingPrice'},
-        ProductionCost:{$sum:'$ProductionCost'}
-      }
+    $group:{
+      _id:null,
+      TotalAmount:{$sum:'$TotalAmount'},
+      ProductionCost:{$sum:'$ProductionCost'},
+      orderQuantity:{$sum:'$orderQuantity'}
     }
-  ]
+  }
+
+  const pipeline = [matchedStage,groupStage ]
 
  const result = await salesCollections.aggregate(pipeline).toArray()
 
-const revenue = result.length>0? result[0].sellingPrice:0;
+const revenue = result.length>0? result[0].TotalAmount:0;
 const productionCost = result.length>0? result[0].ProductionCost:0;
+const quantity = result.length>0? result[0].orderQuantity:0;
 // let totalInvest = 0;
 //   sales.forEach((sale)=>{
 
@@ -483,12 +652,93 @@ const productionCost = result.length>0? result[0].ProductionCost:0;
 //   })
 
 
-res.send({totalSale:sales?.length,totalSalePrice:revenue,productionCost:productionCost})
+res.send({totalSale:sales?.length,totalSalePrice:revenue,productionCost:productionCost,sales:sales,quantity:quantity})
 
    
 })
 
 
+
+
+
+
+// GET ROLE FOR ALL 
+
+
+app.get('/api/v1/userRole/:email',async(req,res)=>{
+
+
+  const email = req.params.email;
+
+  const query = {email:email};
+console.log('role', query)
+  const  users = await usersCollections.findOne(query);
+
+
+
+  res.send(users)
+
+
+})
+
+
+
+
+
+
+
+
+
+
+
+
+// get all shops 
+
+
+app.get('/api/v1/shops',verifyToken, verifyAdmin, async(req,res)=>{
+
+  const result = await shopsCollections.find().toArray();
+
+  res.send(result);
+})
+
+
+
+app.get('/api/v1/adminStats',verifyToken, verifyAdmin, async(req,res)=>{
+
+
+  const totalProducts = await  productsCollections.estimatedDocumentCount();
+  const salesProducts = await  salesCollections.estimatedDocumentCount();
+
+console.log(totalProducts)
+  res.send({totalProducts:totalProducts,salesCollections:salesProducts})
+
+
+})
+
+
+
+
+
+
+
+
+
+
+
+
+// all users collection get
+
+
+
+app.get('/api/v1/users', verifyAdmin, async(req,res)=>{
+
+  const result = await usersCollections.find().toArray();
+
+  res.send(result);
+
+
+})
 
 
 
