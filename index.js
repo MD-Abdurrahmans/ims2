@@ -13,7 +13,7 @@ const port = process.env.PORT || 4000;
 // middle ware
 app.use(
   cors({
-    origin: ["http://localhost:5173"] ,
+    origin: ["http://localhost:5173","http://localhost:5174","https://myims-d3864.web.app"] ,
     credentials: true,
   })
 );
@@ -21,6 +21,34 @@ app.use(express.json());
 app.use(cookieParser());
 
 
+
+
+
+// verifiedToken
+
+const verifiedToken = (req, res, next) => {
+  const token = req.cookies?.token;
+  console.log("userCooke:info", token);
+
+  if (!token) {
+    return res.status(403).send("Unauthorize access");
+  }
+
+  jwt.verify(token, process.env.SECRET_KEY, (err, decode) => {
+    if (err) {
+      console.log("tokenerrr", err);
+      return res.status(401).send({ message: "unauthorize" });
+    }
+    console.log("usrDecode", decode);
+    req.user = decode;
+    next();
+  });
+};
+
+
+
+
+  
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.r486pno.mongodb.net/?retryWrites=true&w=majority`;
 
@@ -39,11 +67,19 @@ const client = new MongoClient(uri, {
 
 
 
+// start work on verify  token 
+
+
+
+
+
+
 
 
 
 
 async function run() {
+
   try {
     // TODO:DELETE BEFORE DEPLOY AWAIT CLIENT
     // Connect the client to the server	(optional starting in v4.7)
@@ -56,134 +92,85 @@ async function run() {
     const  salesCollections = client.db("imsDB").collection('sales');
 
 
+  // verified admin  middleware
 
-    // start work on verify  token 
+  const verifiedAdmin = async (req, res, next) => {
+    const email = req.user.user;
+    const query = { email: email };
 
-const verifyToken = async(req,res,next)=>{
+    const user = await usersCollections.findOne(query);
 
+    const isAdmin = user?.role === "admin";
 
-  const token = req.cookies?.token;
-
-  if(!token){
-
-   return  res.status(401).send({message:'unauthorize access'})
-
-  }
-
-  jwt.verify(token,process.env.SECRET_KEY,(err,decode)=>{
-
-
-   if(err){
-     return res.status(403).send({message:'forbidden'})
-   }
-
-   req.user = decode;
-
-   next();
-
-  })
-
-}
-
-
-
-const verifyAdmin = async(req,res,next)=>{
-
-  const email = req.user?.email;
-
-
- 
-  
-  console.log('emmi',req.user?.email)
-  const query = {email:email};
-
-
-   const user = await usersCollections.findOne(query);
-
-
-   const isAdmin = user?.role === 'admin';
-
-   if(!isAdmin){
-
-     return res.status(403).send({message:'forbidden access' })
-   }
-
-   next();
-
-}
-
-
-
-const verifyManager = async (req,res,next)=>{
-
- const email = req.user.email;
-const query = {email:email};
-
- const user = await usersCollections.findOne(query);
-
-
-  const isManager = user?.role === 'manager';
-
-  if(!isManager){
-
-   return res.status(403).send({message:'forbidden access'})
-  }
-
-}
+    if (!isAdmin) {
+      return res.status(403).send({ message: "forbidden access" });
+    }
+    next();
+  };
 
 
 
 
+     // verified manager  middleware
 
+     const verifiedManager = async (req, res, next) => {
+      const email = req.user.user;
+      const query = { email: email };
 
+      const user = await usersCollections.findOne(query);
+
+      const isManager = user?.role === "manager";
+
+      if (!isManager) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
 
 
 
 // jwt api 
 
+app.post("/api/v1/jwt", (req, res) => {
+  console.log("authEmail", req.body?.user); //from auth email
+  const user = req.body;
 
+  const token = jwt.sign(user, process.env.SECRET_KEY, {
+    expiresIn: "24h",
+  });
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+  });
 
-app.post('/api/v1/jwt',async(req,res)=>{
+  console.log("tk", req.cookies.token);
+  res.send({ status: "success" });
+});
 
+// check done token 
 
-   const email = req.body;
+try {
+  app.post("/api/v1/logout", (req, res) => {
+    console.log("logoutUser", req.body);
 
-  //  console.log('hi' ,email)
-
- const token =   jwt.sign(email,process.env.SECRET_KEY,{expiresIn:'365d'})
-
- res.cookie('token', token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-})
-
- res.send({status:'success'})
-   
-})
-
-
-// logout
-
-app.post('/api/v1/logOut',async(req,res)=>{
-
-    // console.log('log',req.body)
-
- 
-
-    res.clearCookie('token',{
-       maxAge:0,
-       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-    }).send({success:true})
-    
- 
-
-})
-
+    res.clearCookie("token", { maxAge: 0 }).send({ success: true });
+  });
+} catch (error) {
+  console.log(error);
+}
 
 
     // API ROUTES 
+
+
+app.get('/',(req,res)=>{
+
+
+ res.send("hello")
+}
+
+)
 
 
     // collection users post
@@ -223,7 +210,7 @@ app.post('/api/v1/users/:email',async(req,res)=>{
 
 // shop collection create shop post
 // TODO:CHECK ONE ERROR THERE 
-app.post('/api/v1/createShop/:email', verifyToken, verifyToken, async(req,res)=>{
+app.post('/api/v1/createShop/:email',verifiedToken, async(req,res)=>{
     const email = req.params.email;
     const query = {email:email}
   console.log(req.user)
@@ -281,12 +268,12 @@ app.post('/api/v1/createShop/:email', verifyToken, verifyToken, async(req,res)=>
 
 // shop collection get role 
 
-app.get('/api/v1/role/:email',async(req,res)=>{
+app.get('/api/v1/role/:email',  async(req,res)=>{
 
 
- const email = req.params.email;
+ const email = req.params?.email;
  
-  // console.log(email)
+  console.log(email)
  
 const query = {OwnerEmail:email}
 
@@ -318,7 +305,7 @@ const query = {OwnerEmail:email}
 // add products insert action
 
 
-app.post('/api/v1/addProducts/:shopId',verifyToken, verifyManager, async(req,res)=>{
+app.post('/api/v1/addProducts/:shopId',verifiedToken, verifiedManager,async(req,res)=>{
 
     const id =   req.params.shopId;
 
@@ -369,11 +356,16 @@ app.post('/api/v1/addProducts/:shopId',verifyToken, verifyManager, async(req,res
 
 //  get all added product list 
 
+// token vf-done
 
-app.get("/api/v1/products/:email",async(req,res)=>{
+app.get("/api/v1/products/:email", verifiedToken, verifiedManager,  async(req,res)=>{
+
+  if (req.params?.email !== req.user?.user) {
+    return res.status(403).send({ status: "forbidden" });
+  }
 
 const email = req.params.email;
-
+// console.log('tokenUSER',req.user)
 const query = {email:email};
 console.log(query)
     const result = await productsCollections.find(query).toArray();
@@ -383,9 +375,17 @@ console.log(query)
 
 
 
+app.post('/api/v1/jwt',async(req,res)=>{
+
+  console.log('jwtwww')
+
+  console.log(req.body)
+})
 
 
-app.get('/api/v1/products',async(req,res)=>{
+
+
+app.get('/api/v1/products',verifiedToken,verifiedManager,async(req,res)=>{
 
 
 const {search} = req.query;
@@ -422,7 +422,7 @@ const result = await productsCollections.find(query).toArray();
 // update product 
 
 
-app.patch('/api/v1/updateProduct/:id', verifyToken, verifyManager, async(req,res)=>{
+app.patch('/api/v1/updateProduct/:id', verifiedToken,verifiedManager, async(req,res)=>{
 
   const id = req.params.id;
   const filter = {_id: new ObjectId(id)}
@@ -456,7 +456,7 @@ console.log('upd', updateInfo)
 // Delete products 
 
 
-app.delete('/api/v1/productDelete/:id', verifyToken, verifyManager, async(req,res)=>{
+app.delete('/api/v1/productDelete/:id',verifiedToken, verifiedManager,async(req,res)=>{
 
 const id = req.params.id;
 
@@ -478,7 +478,7 @@ console.log(filter)
 // sale collection paid product
 
 
-app.post('/api/v1/saleProduct', verifyToken, verifyManager, async(req,res)=>{
+app.post('/api/v1/saleProduct',verifiedToken,verifiedManager, async(req,res)=>{
 
 
 
@@ -514,7 +514,9 @@ console.log('updateS', updateSale)
 // create payment  intent 
 
 
-app.post('/api/v1/create-payment-intent',async(req,res)=>{
+// token-vf-done-manager
+
+app.post('/api/v1/create-payment-intent',verifiedToken,verifiedManager, async(req,res)=>{
 
 
   const {price} = req.body;
@@ -546,8 +548,9 @@ console.log(price)
 
 // update collection 
 
-app.patch('/api/v1/limitProduct/:email', verifyToken, verifyManager, async(req,res)=>{
+app.patch('/api/v1/limitProduct/:email',verifiedToken,async(req,res)=>{
  
+   
   const email = req.params.email;
   const query = {OwnerEmail:email}
 const paymentInfo = req.body;
@@ -607,9 +610,9 @@ const paymentInfo = req.body;
 
 
 // shop ownerId get and findOut sale summary
+// token-vg-done-manager
 
-
-app.get('/api/v1/sales/:shopId', verifyToken, verifyManager, async(req,res)=>{
+app.get('/api/v1/sales/:shopId', verifiedToken, verifiedManager, async(req,res)=>{
 
   // console.log('rrraj',req.query)
   const page =parseInt( req.query.page);
@@ -660,13 +663,17 @@ res.send({totalSale:sales?.length,totalSalePrice:revenue,productionCost:producti
 
 
 
-
+// token vg-done public
 
 // GET ROLE FOR ALL 
 
 
-app.get('/api/v1/userRole/:email',async(req,res)=>{
+app.get('/api/v1/userRole/:email',verifiedToken,async(req,res)=>{
 
+
+  if (req.params.email !== req.user?.user) {
+        return res.status(403).send({ status: "forbidden" });
+      }
 
   const email = req.params.email;
 
@@ -688,14 +695,14 @@ console.log('role', query)
 
 
 
-
+// admin area bellow
 
 
 
 // get all shops 
-
-
-app.get('/api/v1/shops',verifyToken, verifyAdmin, async(req,res)=>{
+// token v-f and admin v-f done
+// token and admin vf done
+app.get('/api/v1/shops',verifiedToken, verifiedAdmin, async(req,res)=>{
 
   const result = await shopsCollections.find().toArray();
 
@@ -703,8 +710,9 @@ app.get('/api/v1/shops',verifyToken, verifyAdmin, async(req,res)=>{
 })
 
 
+// token-v-f and admin v-f done
 
-app.get('/api/v1/adminStats',verifyToken, verifyAdmin, async(req,res)=>{
+app.get('/api/v1/adminStats',verifiedToken, verifiedAdmin, async(req,res)=>{
 
 
   const totalProducts = await  productsCollections.estimatedDocumentCount();
@@ -719,19 +727,10 @@ console.log(totalProducts)
 
 
 
-
-
-
-
-
-
-
-
 // all users collection get
 
 
-
-app.get('/api/v1/users', verifyAdmin, async(req,res)=>{
+app.get('/api/v1/users',verifiedToken,verifiedAdmin, async(req,res)=>{
 
   const result = await usersCollections.find().toArray();
 
