@@ -5,7 +5,7 @@ const stripe = require("stripe")('sk_test_51OEBh5JPntNfPAY0wWotHmL0dkCHb00srFM3H
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-
+const nodemailer = require('nodemailer');
 // create app 
 const app = express();
 const port = process.env.PORT || 4000;
@@ -738,6 +738,78 @@ app.get('/api/v1/users',verifiedToken,verifiedAdmin, async(req,res)=>{
 
 
 })
+
+
+
+
+
+
+
+
+
+
+
+
+
+// promotion  send email admin fun
+
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: process.env.SMTP_PORT,
+  secure: true,
+  auth: {
+    // TODO: replace `user` and `pass` values from <https://forwardemail.net>
+    user: process.env.SMTP_MAIL,
+    pass: process.env.SMTP_PASSWORD,
+  },
+})
+
+
+
+
+app.post('/api/v1/sendPromotion',(req,res)=>{
+
+ 
+  const  {to,subject,message  } = req.body;
+
+  // console.log(to,subject,message)
+
+  // console.log('message', message)
+
+
+
+  var mailOptions = {
+
+
+     from:process.env.SMTP_MAIL,
+     to:to,
+     subject:subject,
+     text: message
+
+
+  }
+
+
+  transporter.sendMail(mailOptions,(error,info)=>{
+
+
+     if(error){
+      console.log('error', error)
+     }else{
+
+      console.log('success',info)
+
+      res.send({mail:'success'})
+     }
+
+  })
+
+
+})
+
+
+
 
 
 
