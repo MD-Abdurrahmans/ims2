@@ -87,6 +87,7 @@ async function run() {
 
 
     const  usersCollections = client.db("imsDB").collection('users');
+    const  reviewsCollections = client.db("imsDB").collection('reviews');
     const  shopsCollections = client.db("imsDB").collection('shops');
     const  productsCollections = client.db("imsDB").collection('prodcuts');
     const  salesCollections = client.db("imsDB").collection('sales');
@@ -167,7 +168,7 @@ try {
 app.get('/',(req,res)=>{
 
 
- res.send("hello")
+ res.send("hello ims")
 }
 
 )
@@ -811,6 +812,42 @@ app.post('/api/v1/sendPromotion',(req,res)=>{
 
 
 
+// reviews 
+
+
+app.post('/api/v1/reviews',async(req,res)=>{
+
+   const review = req.body;
+
+  //  console.log('review', review)
+
+   const result = await reviewsCollections.insertOne(review);
+
+  //  console.log(result)
+
+   res.send(result)
+
+
+})
+
+
+
+
+// get review
+
+
+app.get(`/api/v1/reviews`,async(req,res)=>{
+
+  //  const  paramsEmail =  req.params.email;
+
+  //  const email = {email:paramsEmail};
+
+   const findReview = await reviewsCollections.find().toArray();
+
+   console.log(findReview)
+
+   res.send(findReview)
+})
 
 
 
